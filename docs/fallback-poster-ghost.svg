@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900" role="img" aria-labelledby="title desc">
+  <title id="title">유령 대체 포스터</title>
+  <desc id="desc">왓챠 상세 페이지를 찾지 못한 유령 영화의 대체 포스터</desc>
+  <rect width="600" height="900" fill="#ede5d7" />
+  <rect x="48" y="48" width="504" height="804" rx="22" fill="#f7f1e7" stroke="#4e392c" stroke-width="6" />
+  <path d="M300 196c78 0 141 60 141 144v220c0 18-14 32-32 32h-14v74l-63-52-63 52v-74h-78c-18 0-32-14-32-32V340c0-84 63-144 141-144z" fill="#4e392c" />
+  <circle cx="252" cy="360" r="18" fill="#f7f1e7" />
+  <circle cx="348" cy="360" r="18" fill="#f7f1e7" />
+  <text x="300" y="742" text-anchor="middle" font-size="64" fill="#4e392c" font-family="'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif">유령</text>
+  <text x="300" y="800" text-anchor="middle" font-size="24" fill="#7a6458" font-family="'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif">왓챠 상세 페이지 미확인</text>
+</svg>
