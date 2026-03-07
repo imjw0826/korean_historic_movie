@@ -24,10 +24,10 @@ export type TimelineEvent = {
 export const siteMeta = {
   title: "한국 사극·역사영화 타임라인",
   description:
-    "NamuWiki 목록을 기준으로 정리한 한국 역사영화 타임라인. 포스터를 누르면 왓챠피디아로 이동합니다.",
+    "한국 역사영화 타임라인. 포스터를 누르면 왓챠피디아로 이동합니다.",
   authorName: "imjw0826",
   githubUrl: "https://github.com/imjw0826/korean_historic_movie",
-  githubLabel: "github.com/imjw0826/korean_historic_movie",
+  githubLabel: "github.com/imjw0826",
 } as const;
 
 export const timelineRange = {
