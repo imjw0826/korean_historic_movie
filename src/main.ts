@@ -21,12 +21,19 @@ let selectedIndex = Math.max(
 let trackWidth = 9600;
 const trackPadding = 180;
 let posterCards: HTMLAnchorElement[] = [];
-let moviePins: HTMLButtonElement[] = [];
 let movieRanges: HTMLElement[] = [];
 let timelineTrack: HTMLElement | null = null;
-let periodText: HTMLElement | null = null;
-let yearText: HTMLElement | null = null;
-let focusText: HTMLElement | null = null;
+let timelineSection: HTMLElement | null = null;
+let carouselWindow: HTMLElement | null = null;
+let activeDetail: HTMLElement | null = null;
+let activeTitleText: HTMLElement | null = null;
+let activePeriodText: HTMLElement | null = null;
+let activeYearText: HTMLElement | null = null;
+let activeFocusText: HTMLElement | null = null;
+let activeReleaseText: HTMLElement | null = null;
+let connectorLine: HTMLElement | null = null;
+let touchStartX = 0;
+let touchStartY = 0;
 
 const clampIndex = (index: number) =>
   Math.max(0, Math.min(index, sortedMovies.length - 1));
@@ -38,8 +45,8 @@ const yearToTrackX = (year: number) =>
   trackPadding + yearToRatio(year) * (trackWidth - trackPadding * 2);
 
 const getOffsetX = (offset: number) => {
-  const nearStep = Math.min(292, window.innerWidth * 0.29);
-  const farStep = Math.min(428, window.innerWidth * 0.42);
+  const nearStep = Math.min(278, window.innerWidth * 0.28);
+  const farStep = Math.min(396, window.innerWidth * 0.39);
 
   if (offset === 0) {
     return 0;
@@ -58,10 +65,10 @@ const getOffsetScale = (offset: number) => {
   }
 
   if (Math.abs(offset) === 1) {
-    return 0.72;
+    return 0.74;
   }
 
-  return 0.48;
+  return 0.52;
 };
 
 const getOffsetOpacity = (offset: number) => {
@@ -70,10 +77,10 @@ const getOffsetOpacity = (offset: number) => {
   }
 
   if (Math.abs(offset) === 1) {
-    return 0.74;
+    return 0.72;
   }
 
-  return 0.16;
+  return 0.18;
 };
 
 const getOffsetBlur = (offset: number) => {
@@ -82,19 +89,36 @@ const getOffsetBlur = (offset: number) => {
   }
 
   if (Math.abs(offset) === 1) {
-    return 0.5;
+    return 0.4;
   }
 
-  return 1.8;
+  return 1.7;
 };
 
 const syncMeasurements = () => {
   trackWidth = Math.max(
-    window.innerWidth * 5.6,
+    window.innerWidth * 5.4,
     (timelineRange.end - timelineRange.start) * 6.2,
     sortedMovies.length * 84,
     9600,
   );
+};
+
+const getActivePosterMetrics = () => {
+  const activePoster = posterCards[selectedIndex];
+
+  if (!activePoster || !timelineSection) {
+    return null;
+  }
+
+  const sectionRect = timelineSection.getBoundingClientRect();
+  const posterTop = activePoster.offsetTop;
+  const posterWidth = activePoster.offsetWidth;
+  const posterHeight = posterWidth * 1.5;
+  const posterBottom = posterTop + posterHeight;
+  const posterCenterX = window.innerWidth / 2 - sectionRect.left;
+
+  return { posterBottom, posterCenterX };
 };
 
 const createPosterMarkup = () =>
@@ -112,31 +136,38 @@ const createPosterMarkup = () =>
           title="${safeTitle}"
         >
           <img src="${movie.posterUrl}" alt="${movie.title} 포스터" loading="lazy" />
-          <div class="poster-copy">
-            <strong>${movie.title}</strong>
-            <span>${movie.releaseYear} · ${movie.period}</span>
-            <small>${movie.historicalFocus}</small>
-          </div>
         </a>
       `;
     })
     .join("");
 
-const createEventMarkup = () =>
-  timelineEvents
-    .map(
-      (event) => `
+const createEventMarkup = () => {
+  const sortedEvents = [...timelineEvents].sort((left, right) => left.year - right.year);
+  const rowLastX: number[] = [];
+
+  return sortedEvents
+    .map((event) => {
+      const x = yearToTrackX(event.year);
+      let row = 0;
+
+      while (rowLastX[row] !== undefined && x - rowLastX[row] < 128) {
+        row += 1;
+      }
+
+      rowLastX[row] = x;
+
+      return `
         <div
           class="timeline-event"
-          style="left: ${yearToTrackX(event.year)}px"
+          style="left: ${x}px; --event-offset: ${row * 32}px"
         >
-          <span class="timeline-event__dot"></span>
           <span class="timeline-event__line"></span>
           <span class="timeline-event__label">${event.label}</span>
         </div>
-      `,
-    )
+      `;
+    })
     .join("");
+};
 
 const createCenturyMarkup = () =>
   centuryMarks
@@ -150,22 +181,14 @@ const createCenturyMarkup = () =>
     )
     .join("");
 
-const createPinMarkup = () =>
+const createRangeMarkup = () =>
   sortedMovies
     .map((movie, index) => {
-      const midpoint = (movie.settingStart + movie.settingEnd) / 2;
       const startX = yearToTrackX(movie.settingStart);
       const endX = yearToTrackX(movie.settingEnd);
       const rangeWidth = Math.max(endX - startX, 18);
 
       return `
-        <button
-          type="button"
-          class="movie-pin"
-          data-pin-index="${index}"
-          style="left: ${yearToTrackX(midpoint)}px"
-          aria-label="${movie.title} 선택"
-        ></button>
         <span
           class="movie-range"
           data-range-index="${index}"
@@ -192,7 +215,7 @@ const render = () => {
         <p class="page-header__description">${siteMeta.description}</p>
       </header>
 
-      <section class="timeline-full" aria-label="한국 역사영화 타임라인">
+      <section class="timeline-full" data-timeline-section aria-label="한국 역사영화 타임라인">
         <div class="carousel-stage">
           <button
             type="button"
@@ -207,6 +230,16 @@ const render = () => {
             ${createPosterMarkup()}
           </div>
 
+          <div class="active-detail" data-active-detail aria-live="polite">
+            <p class="active-detail__period" data-period></p>
+            <h2 class="active-detail__title" data-title></h2>
+            <p class="active-detail__focus" data-focus></p>
+            <div class="active-detail__meta">
+              <span class="active-detail__year" data-year></span>
+              <span class="active-detail__release" data-release></span>
+            </div>
+          </div>
+
           <button
             type="button"
             class="carousel-arrow carousel-arrow--right"
@@ -217,17 +250,13 @@ const render = () => {
           </button>
         </div>
 
-        <div class="timeline-meta">
-          <span class="timeline-meta__period" data-period></span>
-          <strong class="timeline-meta__year" data-year></strong>
-          <span class="timeline-meta__focus" data-focus></span>
-        </div>
+        <span class="timeline-connector" data-connector aria-hidden="true"></span>
 
         <div class="timeline-rail">
           <div class="timeline-track" data-track style="width: ${trackWidth}px">
             <div class="timeline-line"></div>
             ${createCenturyMarkup()}
-            ${createPinMarkup()}
+            ${createRangeMarkup()}
             ${createEventMarkup()}
           </div>
         </div>
@@ -240,18 +269,32 @@ const bindDom = () => {
   posterCards = Array.from(
     document.querySelectorAll<HTMLAnchorElement>("[data-card-index]"),
   );
-  moviePins = Array.from(
-    document.querySelectorAll<HTMLButtonElement>("[data-pin-index]"),
-  );
   movieRanges = Array.from(
     document.querySelectorAll<HTMLElement>("[data-range-index]"),
   );
+  carouselWindow = document.querySelector<HTMLElement>(".carousel-window");
   timelineTrack = document.querySelector<HTMLElement>("[data-track]");
-  periodText = document.querySelector<HTMLElement>("[data-period]");
-  yearText = document.querySelector<HTMLElement>("[data-year]");
-  focusText = document.querySelector<HTMLElement>("[data-focus]");
+  timelineSection = document.querySelector<HTMLElement>("[data-timeline-section]");
+  activeDetail = document.querySelector<HTMLElement>("[data-active-detail]");
+  activeTitleText = document.querySelector<HTMLElement>("[data-title]");
+  activePeriodText = document.querySelector<HTMLElement>("[data-period]");
+  activeYearText = document.querySelector<HTMLElement>("[data-year]");
+  activeFocusText = document.querySelector<HTMLElement>("[data-focus]");
+  activeReleaseText = document.querySelector<HTMLElement>("[data-release]");
+  connectorLine = document.querySelector<HTMLElement>("[data-connector]");
 
-  if (!timelineTrack || !periodText || !yearText || !focusText) {
+  if (
+    !timelineTrack ||
+    !timelineSection ||
+    !carouselWindow ||
+    !activeDetail ||
+    !activeTitleText ||
+    !activePeriodText ||
+    !activeYearText ||
+    !activeFocusText ||
+    !activeReleaseText ||
+    !connectorLine
+  ) {
     throw new Error("Timeline UI was not initialized.");
   }
 
@@ -261,23 +304,77 @@ const bindDom = () => {
     });
   });
 
-  moviePins.forEach((pin, index) => {
-    pin.addEventListener("click", () => {
-      selectedIndex = clampIndex(index);
-      updateScene();
-    });
-  });
+  carouselWindow.addEventListener(
+    "touchstart",
+    (event) => {
+      const touch = event.changedTouches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+    },
+    { passive: true },
+  );
+
+  carouselWindow.addEventListener(
+    "touchend",
+    (event) => {
+      const touch = event.changedTouches[0];
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = touch.clientY - touchStartY;
+
+      if (Math.abs(deltaX) < 42 || Math.abs(deltaY) > 52) {
+        return;
+      }
+
+      moveSelection(deltaX < 0 ? 1 : -1);
+    },
+    { passive: true },
+  );
+};
+
+const drawConnector = () => {
+  if (
+    !timelineSection ||
+    !activeDetail ||
+    !connectorLine
+  ) {
+    return;
+  }
+
+  const activeRange = movieRanges[selectedIndex];
+  const posterMetrics = getActivePosterMetrics();
+
+  if (!activeRange || !posterMetrics) {
+    return;
+  }
+
+  const sectionRect = timelineSection.getBoundingClientRect();
+  const detailRect = activeDetail.getBoundingClientRect();
+  const rangeRect = activeRange.getBoundingClientRect();
+  const startY = detailRect.bottom - sectionRect.top + 14;
+  const endX = posterMetrics.posterCenterX;
+  const endY = rangeRect.top + rangeRect.height / 2 - sectionRect.top;
+
+  connectorLine.style.left = `${endX}px`;
+  connectorLine.style.top = `${startY}px`;
+  connectorLine.style.height = `${Math.max(0, endY - startY)}px`;
+  connectorLine.style.opacity = "1";
 };
 
 const updateScene = () => {
-  if (!timelineTrack || !periodText || !yearText || !focusText) {
+  if (
+    !timelineTrack ||
+    !activeTitleText ||
+    !activePeriodText ||
+    !activeYearText ||
+    !activeFocusText ||
+    !activeReleaseText
+  ) {
     return;
   }
 
   const activeMovie = sortedMovies[selectedIndex];
-  const activeMidpoint = (activeMovie.settingStart + activeMovie.settingEnd) / 2;
   const centerX = window.innerWidth / 2;
-  const activeX = yearToTrackX(activeMidpoint);
+  const activeX = yearToTrackX(activeMovie.settingStart);
   const translateX = centerX - activeX;
 
   posterCards.forEach((card, index) => {
@@ -285,7 +382,7 @@ const updateScene = () => {
     const clampedOffset = Math.max(-2, Math.min(2, offset));
     const hidden = Math.abs(offset) > 2;
     const translate = getOffsetX(clampedOffset);
-    const translateY = Math.abs(clampedOffset) * 24;
+    const translateY = Math.abs(clampedOffset) * 12;
     const scale = getOffsetScale(clampedOffset);
     const opacity = getOffsetOpacity(clampedOffset);
     const blur = getOffsetBlur(clampedOffset);
@@ -299,21 +396,27 @@ const updateScene = () => {
     card.style.pointerEvents = hidden ? "none" : "auto";
   });
 
-  moviePins.forEach((pin, index) => {
-    pin.classList.toggle("is-active", index === selectedIndex);
-  });
-
   movieRanges.forEach((range, index) => {
     range.classList.toggle("is-active", index === selectedIndex);
   });
 
   timelineTrack.style.transform = `translate3d(${translateX}px, 0, 0)`;
-  periodText.textContent = activeMovie.period;
-  yearText.textContent = formatYearRange(
+  activeTitleText.textContent = activeMovie.title;
+  activePeriodText.textContent = activeMovie.period;
+  activeYearText.textContent = formatYearRange(
     activeMovie.settingStart,
     activeMovie.settingEnd,
   );
-  focusText.textContent = activeMovie.historicalFocus;
+  activeFocusText.textContent = activeMovie.historicalFocus;
+  activeReleaseText.textContent = `개봉 ${activeMovie.releaseYear}`;
+
+  const posterMetrics = getActivePosterMetrics();
+  if (posterMetrics && activeDetail) {
+    const detailTop = posterMetrics.posterBottom + 44;
+    activeDetail.style.top = `${detailTop}px`;
+  }
+
+  drawConnector();
 };
 
 const moveSelection = (direction: number) => {
