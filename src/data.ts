@@ -22,7 +22,7 @@ export type TimelineEvent = {
 };
 
 export const siteMeta = {
-  title: "한국 사극·역사영화 타임라인",
+  title: "한국 사극영화 타임라인",
   description:
     "한국 역사영화 타임라인. 포스터를 누르면 왓챠피디아로 이동합니다.",
   authorName: "imjw0826",

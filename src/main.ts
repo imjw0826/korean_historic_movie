@@ -18,6 +18,9 @@ let selectedIndex = Math.max(
   0,
   sortedMovies.findIndex((movie) => movie.title === "왕의 남자"),
 );
+let currentMovies = [...sortedMovies];
+let searchQuery = "";
+let searchDraft = "";
 let trackWidth = 9600;
 const trackPadding = 180;
 let posterCards: HTMLAnchorElement[] = [];
@@ -25,18 +28,23 @@ let movieRanges: HTMLElement[] = [];
 let timelineTrack: HTMLElement | null = null;
 let timelineSection: HTMLElement | null = null;
 let carouselWindow: HTMLElement | null = null;
+let searchForm: HTMLFormElement | null = null;
+let searchInput: HTMLInputElement | null = null;
 let activeDetail: HTMLElement | null = null;
 let activeTitleText: HTMLElement | null = null;
 let activePeriodText: HTMLElement | null = null;
 let activeYearText: HTMLElement | null = null;
 let activeFocusText: HTMLElement | null = null;
 let activeReleaseText: HTMLElement | null = null;
+let liveRegion: HTMLElement | null = null;
 let connectorLine: HTMLElement | null = null;
 let touchStartX = 0;
 let touchStartY = 0;
+let touchCurrentX = 0;
+let prefersReducedMotion = false;
 
 const clampIndex = (index: number) =>
-  Math.max(0, Math.min(index, sortedMovies.length - 1));
+  Math.max(0, Math.min(index, currentMovies.length - 1));
 
 const yearToRatio = (year: number) =>
   (year - timelineRange.start) / (timelineRange.end - timelineRange.start);
@@ -99,9 +107,14 @@ const syncMeasurements = () => {
   trackWidth = Math.max(
     window.innerWidth * 5.4,
     (timelineRange.end - timelineRange.start) * 6.2,
-    sortedMovies.length * 84,
+    currentMovies.length * 84,
     9600,
   );
+};
+
+const syncMotionPreference = () => {
+  prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.documentElement.classList.toggle("reduced-motion", prefersReducedMotion);
 };
 
 const getActivePosterMetrics = () => {
@@ -121,8 +134,69 @@ const getActivePosterMetrics = () => {
   return { posterBottom, posterCenterX };
 };
 
+const preloadAdjacentPosters = () => {
+  [selectedIndex - 1, selectedIndex + 1].forEach((index) => {
+    if (index < 0 || index >= currentMovies.length) {
+      return;
+    }
+
+    const preloadImage = new Image();
+    preloadImage.src = currentMovies[index].posterUrl;
+  });
+};
+
+const updateAnnouncement = () => {
+  if (!liveRegion) {
+    return;
+  }
+
+  const activeMovie = currentMovies[selectedIndex];
+  if (!activeMovie) {
+    liveRegion.textContent = searchQuery
+      ? `"${searchQuery}" 검색 결과가 없습니다.`
+      : "";
+    return;
+  }
+  const periodText =
+    activeMovie.settingStart === activeMovie.settingEnd
+      ? `${activeMovie.settingStart}년`
+      : `${activeMovie.settingStart}년부터 ${activeMovie.settingEnd}년`;
+
+  liveRegion.textContent = `현재 ${selectedIndex + 1}번째 영화 ${activeMovie.title}. 시대 배경은 ${periodText}. 개봉 연도는 ${activeMovie.releaseYear}년.`;
+};
+
+const applySearch = () => {
+  searchQuery = searchDraft.trim();
+
+  currentMovies = [...sortedMovies];
+
+  if (!searchQuery) {
+    updateScene();
+    return;
+  }
+
+  const keyword = searchQuery.toLowerCase();
+  const matchedIndex = currentMovies.findIndex((movie) => {
+    return (
+      movie.title.toLowerCase().includes(keyword) ||
+      movie.historicalFocus.toLowerCase().includes(keyword) ||
+      movie.period.toLowerCase().includes(keyword)
+    );
+  });
+
+  if (matchedIndex === -1) {
+    if (liveRegion) {
+      liveRegion.textContent = `"${searchQuery}" 검색 결과가 없습니다.`;
+    }
+    return;
+  }
+
+  selectedIndex = matchedIndex;
+  updateScene();
+};
+
 const createPosterMarkup = () =>
-  sortedMovies
+  currentMovies
     .map((movie, index) => {
       const safeTitle = `${movie.title} · ${movie.historicalFocus}`;
 
@@ -182,7 +256,7 @@ const createCenturyMarkup = () =>
     .join("");
 
 const createRangeMarkup = () =>
-  sortedMovies
+  currentMovies
     .map((movie, index) => {
       const startX = yearToTrackX(movie.settingStart);
       const endX = yearToTrackX(movie.settingEnd);
@@ -204,18 +278,37 @@ const render = () => {
   app.innerHTML = `
     <main class="page-shell">
       <header class="page-header">
-        <p class="page-header__eyebrow">한국 역사영화</p>
-        <h1>${siteMeta.title}</h1>
-        <p class="page-header__credit">
-          만든 사람 ${siteMeta.authorName}
-          <a href="${siteMeta.githubUrl}" target="_blank" rel="noreferrer noopener">
-            ${siteMeta.githubLabel}
-          </a>
-        </p>
-        <p class="page-header__description">${siteMeta.description}</p>
+        <div class="page-header__top">
+          <div class="page-header__title-block">
+            <p class="page-header__eyebrow">한국 역사영화</p>
+            <h1>${siteMeta.title}</h1>
+            <p class="page-header__credit">
+              만든 사람 ${siteMeta.authorName}
+              <a href="${siteMeta.githubUrl}" target="_blank" rel="noreferrer noopener">
+                ${siteMeta.githubLabel}
+              </a>
+            </p>
+            <p class="page-header__description">${siteMeta.description}</p>
+          </div>
+
+          <form class="header-search" data-search-form aria-label="영화 검색">
+            <span class="header-search__label">검색</span>
+            <div class="header-search__controls">
+              <input
+                class="header-search__input"
+                type="search"
+                placeholder="영화 제목 검색"
+                value="${searchDraft}"
+                data-search-input
+              />
+              <button class="header-search__button" type="submit">검색</button>
+            </div>
+          </form>
+        </div>
       </header>
 
       <section class="timeline-full" data-timeline-section aria-label="한국 역사영화 타임라인">
+        <p class="sr-only" data-live-region aria-live="polite" aria-atomic="true"></p>
         <div class="carousel-stage">
           <button
             type="button"
@@ -273,6 +366,8 @@ const bindDom = () => {
     document.querySelectorAll<HTMLElement>("[data-range-index]"),
   );
   carouselWindow = document.querySelector<HTMLElement>(".carousel-window");
+  searchForm = document.querySelector<HTMLFormElement>("[data-search-form]");
+  searchInput = document.querySelector<HTMLInputElement>("[data-search-input]");
   timelineTrack = document.querySelector<HTMLElement>("[data-track]");
   timelineSection = document.querySelector<HTMLElement>("[data-timeline-section]");
   activeDetail = document.querySelector<HTMLElement>("[data-active-detail]");
@@ -281,18 +376,22 @@ const bindDom = () => {
   activeYearText = document.querySelector<HTMLElement>("[data-year]");
   activeFocusText = document.querySelector<HTMLElement>("[data-focus]");
   activeReleaseText = document.querySelector<HTMLElement>("[data-release]");
+  liveRegion = document.querySelector<HTMLElement>("[data-live-region]");
   connectorLine = document.querySelector<HTMLElement>("[data-connector]");
 
   if (
     !timelineTrack ||
     !timelineSection ||
     !carouselWindow ||
+    !searchForm ||
+    !searchInput ||
     !activeDetail ||
     !activeTitleText ||
     !activePeriodText ||
     !activeYearText ||
     !activeFocusText ||
     !activeReleaseText ||
+    !liveRegion ||
     !connectorLine
   ) {
     throw new Error("Timeline UI was not initialized.");
@@ -304,12 +403,30 @@ const bindDom = () => {
     });
   });
 
+  searchInput.addEventListener("input", (event) => {
+    searchDraft = (event.target as HTMLInputElement).value;
+  });
+
+  searchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    applySearch();
+  });
+
   carouselWindow.addEventListener(
     "touchstart",
     (event) => {
       const touch = event.changedTouches[0];
       touchStartX = touch.clientX;
       touchStartY = touch.clientY;
+      touchCurrentX = touch.clientX;
+    },
+    { passive: true },
+  );
+
+  carouselWindow.addEventListener(
+    "touchmove",
+    (event) => {
+      touchCurrentX = event.changedTouches[0].clientX;
     },
     { passive: true },
   );
@@ -318,7 +435,7 @@ const bindDom = () => {
     "touchend",
     (event) => {
       const touch = event.changedTouches[0];
-      const deltaX = touch.clientX - touchStartX;
+      const deltaX = touchCurrentX - touchStartX || touch.clientX - touchStartX;
       const deltaY = touch.clientY - touchStartY;
 
       if (Math.abs(deltaX) < 42 || Math.abs(deltaY) > 52) {
@@ -326,6 +443,9 @@ const bindDom = () => {
       }
 
       moveSelection(deltaX < 0 ? 1 : -1);
+      touchStartX = 0;
+      touchStartY = 0;
+      touchCurrentX = 0;
     },
     { passive: true },
   );
@@ -372,7 +492,7 @@ const updateScene = () => {
     return;
   }
 
-  const activeMovie = sortedMovies[selectedIndex];
+  const activeMovie = currentMovies[selectedIndex];
   const centerX = window.innerWidth / 2;
   const activeX = yearToTrackX(activeMovie.settingStart);
   const translateX = centerX - activeX;
@@ -389,11 +509,13 @@ const updateScene = () => {
 
     card.classList.toggle("is-active", offset === 0);
     card.classList.toggle("is-hidden", hidden);
+    card.setAttribute("aria-current", offset === 0 ? "true" : "false");
     card.style.transform = `translate3d(calc(-50% + ${translate}px), ${translateY}px, 0) scale(${scale})`;
     card.style.opacity = hidden ? "0" : `${opacity}`;
     card.style.filter = `blur(${blur}px) saturate(${offset === 0 ? 1 : 0.84})`;
     card.style.zIndex = `${20 - Math.abs(offset)}`;
     card.style.pointerEvents = hidden ? "none" : "auto";
+    card.style.transitionDuration = prefersReducedMotion ? "0ms" : "";
   });
 
   movieRanges.forEach((range, index) => {
@@ -417,6 +539,8 @@ const updateScene = () => {
   }
 
   drawConnector();
+  preloadAdjacentPosters();
+  updateAnnouncement();
 };
 
 const moveSelection = (direction: number) => {
@@ -425,6 +549,7 @@ const moveSelection = (direction: number) => {
 };
 
 const mount = () => {
+  syncMotionPreference();
   render();
   bindDom();
   updateScene();
@@ -440,10 +565,29 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     moveSelection(1);
   }
+
+  if (event.key === "Home") {
+    event.preventDefault();
+    selectedIndex = 0;
+    updateScene();
+  }
+
+  if (event.key === "End") {
+    event.preventDefault();
+    selectedIndex = currentMovies.length - 1;
+    updateScene();
+  }
 });
 
 window.addEventListener("resize", () => {
   mount();
 });
+
+window
+  .matchMedia("(prefers-reduced-motion: reduce)")
+  .addEventListener("change", () => {
+    syncMotionPreference();
+    updateScene();
+  });
 
 mount();
