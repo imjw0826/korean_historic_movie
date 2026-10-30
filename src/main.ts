@@ -36,6 +36,10 @@ let activePeriodText: HTMLElement | null = null;
 let activeYearText: HTMLElement | null = null;
 let activeFocusText: HTMLElement | null = null;
 let activeReleaseText: HTMLElement | null = null;
+let activeCountText: HTMLElement | null = null;
+let searchHint: HTMLElement | null = null;
+let lastRenderedMovieId: string | null = null;
+let hasMounted = false;
 let liveRegion: HTMLElement | null = null;
 let connectorLine: HTMLElement | null = null;
 let touchStartX = 0;
@@ -165,6 +169,27 @@ const updateAnnouncement = () => {
   liveRegion.textContent = `현재 ${selectedIndex + 1}번째 영화 ${activeMovie.title}. 시대 배경은 ${periodText}. 개봉 연도는 ${activeMovie.releaseYear}년.`;
 };
 
+const defaultHintMarkup = `<kbd aria-hidden="true">←</kbd><kbd aria-hidden="true">→</kbd> 키로 시대를 이동할 수 있어요`;
+
+const setSearchHint = (message?: string, isError = false) => {
+  if (!searchHint) {
+    return;
+  }
+
+  searchHint.classList.toggle("is-error", isError);
+  if (message) {
+    searchHint.textContent = message;
+  } else {
+    searchHint.innerHTML = defaultHintMarkup;
+  }
+};
+
+const chevronIcon = (direction: "left" | "right") => `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="${direction === "left" ? "M15 18l-6-6 6-6" : "M9 18l6-6-6-6"}" />
+  </svg>
+`;
+
 const applySearch = () => {
   searchQuery = searchDraft.trim();
 
@@ -188,8 +213,11 @@ const applySearch = () => {
     if (liveRegion) {
       liveRegion.textContent = `"${searchQuery}" 검색 결과가 없습니다.`;
     }
+    setSearchHint(`"${searchQuery}" 검색 결과가 없습니다.`, true);
     return;
   }
+
+  setSearchHint();
 
   selectedIndex = matchedIndex;
   updateScene();
@@ -276,33 +304,45 @@ const render = () => {
   syncMeasurements();
 
   app.innerHTML = `
-    <main class="page-shell">
+    <main class="page-shell${hasMounted ? "" : " is-entering"}">
       <header class="page-header">
         <div class="page-header__top">
           <div class="page-header__title-block">
-            <p class="page-header__eyebrow">한국 역사영화</p>
+            <p class="page-header__eyebrow">
+              <span class="page-header__badge">${sortedMovies.length}편</span>
+              한국 역사영화 아카이브
+            </p>
             <h1>${siteMeta.title}</h1>
+            <p class="page-header__description">${siteMeta.description}</p>
             <p class="page-header__credit">
-              만든 사람 ${siteMeta.authorName}
+              <span>만든 사람 ${siteMeta.authorName}</span>
+              <span class="page-header__divider" aria-hidden="true"></span>
               <a href="${siteMeta.githubUrl}" target="_blank" rel="noreferrer noopener">
                 ${siteMeta.githubLabel}
               </a>
             </p>
-            <p class="page-header__description">${siteMeta.description}</p>
           </div>
 
           <form class="header-search" data-search-form aria-label="영화 검색">
-            <span class="header-search__label">검색</span>
+            <label class="header-search__label" for="movie-search">영화 검색</label>
             <div class="header-search__controls">
-              <input
-                class="header-search__input"
-                type="search"
-                placeholder="영화 제목 검색"
-                value="${searchDraft}"
-                data-search-input
-              />
+              <div class="header-search__field">
+                <svg class="header-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5" />
+                </svg>
+                <input
+                  id="movie-search"
+                  class="header-search__input"
+                  type="search"
+                  placeholder="제목, 사건, 시대로 검색"
+                  value="${searchDraft}"
+                  data-search-input
+                />
+              </div>
               <button class="header-search__button" type="submit">검색</button>
             </div>
+            <p class="header-search__hint" data-search-hint>${defaultHintMarkup}</p>
           </form>
         </div>
       </header>
@@ -316,7 +356,7 @@ const render = () => {
             data-direction="prev"
             aria-label="이전 영화"
           >
-            ←
+            ${chevronIcon("left")}
           </button>
 
           <div class="carousel-window">
@@ -330,6 +370,7 @@ const render = () => {
             <div class="active-detail__meta">
               <span class="active-detail__year" data-year></span>
               <span class="active-detail__release" data-release></span>
+              <span class="active-detail__count" data-count></span>
             </div>
           </div>
 
@@ -339,7 +380,7 @@ const render = () => {
             data-direction="next"
             aria-label="다음 영화"
           >
-            →
+            ${chevronIcon("right")}
           </button>
         </div>
 
@@ -376,6 +417,8 @@ const bindDom = () => {
   activeYearText = document.querySelector<HTMLElement>("[data-year]");
   activeFocusText = document.querySelector<HTMLElement>("[data-focus]");
   activeReleaseText = document.querySelector<HTMLElement>("[data-release]");
+  activeCountText = document.querySelector<HTMLElement>("[data-count]");
+  searchHint = document.querySelector<HTMLElement>("[data-search-hint]");
   liveRegion = document.querySelector<HTMLElement>("[data-live-region]");
   connectorLine = document.querySelector<HTMLElement>("[data-connector]");
 
@@ -391,6 +434,8 @@ const bindDom = () => {
     !activeYearText ||
     !activeFocusText ||
     !activeReleaseText ||
+    !activeCountText ||
+    !searchHint ||
     !liveRegion ||
     !connectorLine
   ) {
@@ -405,6 +450,9 @@ const bindDom = () => {
 
   searchInput.addEventListener("input", (event) => {
     searchDraft = (event.target as HTMLInputElement).value;
+    if (searchHint?.classList.contains("is-error")) {
+      setSearchHint();
+    }
   });
 
   searchForm.addEventListener("submit", (event) => {
@@ -531,6 +579,18 @@ const updateScene = () => {
   );
   activeFocusText.textContent = activeMovie.historicalFocus;
   activeReleaseText.textContent = `개봉 ${activeMovie.releaseYear}`;
+  if (activeCountText) {
+    activeCountText.textContent = `${selectedIndex + 1} / ${currentMovies.length}`;
+  }
+
+  if (activeDetail && lastRenderedMovieId !== activeMovie.id) {
+    if (lastRenderedMovieId !== null && !prefersReducedMotion) {
+      activeDetail.classList.remove("is-swapping");
+      void activeDetail.offsetWidth;
+      activeDetail.classList.add("is-swapping");
+    }
+    lastRenderedMovieId = activeMovie.id;
+  }
 
   const posterMetrics = getActivePosterMetrics();
   if (posterMetrics && activeDetail) {
@@ -553,6 +613,7 @@ const mount = () => {
   render();
   bindDom();
   updateScene();
+  hasMounted = true;
 };
 
 window.addEventListener("keydown", (event) => {

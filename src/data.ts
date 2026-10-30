@@ -24,7 +24,7 @@ export type TimelineEvent = {
 export const siteMeta = {
   title: "한국 사극영화 타임라인",
   description:
-    "한국 역사영화 타임라인. 포스터를 누르면 왓챠피디아로 이동합니다.",
+    "삼국시대부터 현대사까지, 영화 속 시대 배경 순으로 늘어놓았습니다. 포스터를 누르면 왓챠피디아로 이동합니다.",
   authorName: "imjw0826",
   githubUrl: "https://github.com/imjw0826/korean_historic_movie",
   githubLabel: "github.com/imjw0826",
